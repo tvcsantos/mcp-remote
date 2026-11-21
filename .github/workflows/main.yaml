@@ -79,7 +79,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Publishes the release on this commit under every name, the first included. A name that
       # already has it is skipped, so rerunning the workflow after a failed publish fills in only
-      # what is missing. A commit with no release tag has nothing to publish.
+      # what is missing. A commit with no release tag has nothing to publish. npm answers a
+      # version it already has with "previously published", or, while one it has just accepted
+      # is still being processed, a 409 about a "previously staged" version.
       - name: Publish under every package name
         run: |
           tag=$(git describe --tags --exact-match --match 'v[0-9]*' HEAD 2>/dev/null) || {
@@ -95,7 +97,7 @@ jobs:
             npm pkg set name="$name"
             if out=$(npm publish --ignore-scripts 2>&1); then
               echo "$out"
-            elif grep -q 'previously published' <<<"$out"; then
+            elif grep -qE 'previously (published|staged)' <<<"$out"; then
               echo "$name@$version is already on npm"
             else
               echo "$out"
