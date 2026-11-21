@@ -13,6 +13,13 @@ jobs:
       issues: write
       pull-requests: write
       id-token: write
+    env:
+      # Every npm name a release is published under, one per line, from the NPM_PACKAGE_NAMES
+      # GitHub variable (the `release` environment's, else the repository's). The repo keeps the
+      # unscoped name and only what CI publishes is renamed. semantic-release publishes the first;
+      # the last step publishes the rest. Unset or empty, a release is published under the name
+      # in package.json.
+      NPM_PACKAGE_NAMES: ${{ vars.NPM_PACKAGE_NAMES }}
     steps:
       - name: setup repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -36,7 +43,43 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+      # Scoped packages are private unless published as public.
+      - name: Scope the package name
+        run: |
+          name=$(echo "$NPM_PACKAGE_NAMES" | awk 'NF { print $1; exit }')
+          if [ -z "$name" ]; then
+            echo "No package names listed; publishing as $(npm pkg get name)"
+            exit 0
+          fi
+          npm pkg set name="$name" publishConfig.access=public
       - name: Release
         run: pnpm semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Publishes the release on this commit under every name, the first included. A name that
+      # already has it is skipped, so rerunning the workflow after a failed publish fills in only
+      # what is missing. A commit with no release tag has nothing to publish.
+      - name: Publish under every package name
+        run: |
+          tag=$(git describe --tags --exact-match --match 'v[0-9]*' HEAD 2>/dev/null) || {
+            echo "No release on this commit"
+            exit 0
+          }
+          version=${tag#v}
+          npm pkg set version="$version"
+          names=$(echo "$NPM_PACKAGE_NAMES" | awk 'NF')
+          [ -n "$names" ] || names=$(npm pkg get name | tr -d '"')
+          failed=0
+          for name in $names; do
+            npm pkg set name="$name"
+            if out=$(npm publish --ignore-scripts 2>&1); then
+              echo "$out"
+            elif grep -q 'previously published' <<<"$out"; then
+              echo "$name@$version is already on npm"
+            else
+              echo "$out"
+              echo "::error::Publishing $name@$version failed"
+              failed=1
+            fi
+          done
+          exit $failed
