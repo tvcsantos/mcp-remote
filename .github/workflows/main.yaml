@@ -62,10 +62,12 @@ jobs:
             done
         env:
           NPM_PACKAGE_CONTRIBUTORS: ${{ vars.NPM_PACKAGE_CONTRIBUTORS }}
-      # Scoped packages are private unless published as public.
+      # Scoped packages are private unless published as public. A variable saved in the GitHub UI
+      # has \r\n line endings, and a \r left on the name ends up in the published tarball, where
+      # the registry refuses it, so it is stripped here and in the last step.
       - name: Scope the package name
         run: |
-          name=$(echo "$NPM_PACKAGE_NAMES" | awk 'NF { print $1; exit }')
+          name=$(tr -d '\r' <<<"$NPM_PACKAGE_NAMES" | awk 'NF { print $1; exit }')
           if [ -z "$name" ]; then
             echo "No package names listed; publishing as $(npm pkg get name)"
             exit 0
@@ -86,7 +88,7 @@ jobs:
           }
           version=${tag#v}
           npm pkg set version="$version"
-          names=$(echo "$NPM_PACKAGE_NAMES" | awk 'NF')
+          names=$(tr -d '\r' <<<"$NPM_PACKAGE_NAMES" | awk 'NF { print $1 }')
           [ -n "$names" ] || names=$(npm pkg get name | tr -d '"')
           failed=0
           for name in $names; do
