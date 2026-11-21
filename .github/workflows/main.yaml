@@ -43,6 +43,25 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+      # package.json names upstream as the repository. semantic-release releases against that
+      # repository, and npm checks provenance against it, so in CI it has to be the one running.
+      - name: Point the package at this repository
+        run: npm pkg set repository="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+      # Credits whoever maintains this copy, from the NPM_PACKAGE_CONTRIBUTORS GitHub variable: one
+      # per line, as "Name <email> (url)" with the email and url optional. They are added after
+      # any contributors package.json already has, and `author` stays the original author.
+      - name: Add the package contributors
+        if: vars.NPM_PACKAGE_CONTRIBUTORS != ''
+        run: |
+          i=$(node -p "(require('./package.json').contributors || []).length")
+          # Trimmed and without blank lines; values typed in the GitHub UI can carry \r.
+          awk 'NF { gsub(/^[ \t\r]+|[ \t\r]+$/, ""); print }' <<<"$NPM_PACKAGE_CONTRIBUTORS" |
+            while IFS= read -r contributor; do
+              npm pkg set "contributors[$i]=$contributor"
+              i=$((i + 1))
+            done
+        env:
+          NPM_PACKAGE_CONTRIBUTORS: ${{ vars.NPM_PACKAGE_CONTRIBUTORS }}
       # Scoped packages are private unless published as public.
       - name: Scope the package name
         run: |
